@@ -1,11 +1,14 @@
 import datetime as dt
+import logging
 
 from fastapi import APIRouter
 
-from app.models.triage import Citation, TriageRequest, TriageResponse
+from app.models.triage import Citation, Intent, TriageRequest, TriageResponse
 from app.services.escalation import STALE_DAYS_THRESHOLD, should_escalate
 from app.services.llm import LLMTriageOutput, get_llm_provider
 from app.services.retrieval import RetrievedChunk, retrieve_chunks
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -53,10 +56,27 @@ async def triage(request: TriageRequest) -> TriageResponse:
     chunks = await retrieve_chunks(request.tenant_id, request.message, k=TOP_K)
 
     provider = get_llm_provider()
-    result: LLMTriageOutput = await provider.classify_and_draft(
-        message=request.message,
-        snippets=[c.content for c in chunks],
-    )
+    try:
+        result: LLMTriageOutput = await provider.classify_and_draft(
+            message=request.message,
+            snippets=[c.content for c in chunks],
+        )
+    except Exception:
+        # The same "escalate instead of guessing" principle applies when the
+        # LLM itself is unavailable, not only when it answers with low
+        # confidence. A 500 here would tell an integrator "this request
+        # failed"; what actually happened is "we can't safely answer this
+        # one - a human should", which is a normal, structured outcome.
+        logger.exception("LLM provider failed for tenant=%s", request.tenant_id)
+        return TriageResponse(
+            intent=Intent.OTHER,
+            priority="high",
+            confidence=0.0,
+            draft_reply=None,
+            citations=[],
+            escalate=True,
+            escalation_reason="LLM provider unavailable",
+        )
 
     citations = _build_citations(chunks, result.used_snippet_indices)
     has_stale_source = _has_stale_source(chunks, result.used_snippet_indices)

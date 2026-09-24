@@ -7,7 +7,7 @@ retrieval results for those indices. An index the model invents that we
 didn't send back is dropped, not trusted - see build_citations() in
 app/api/triage.py.
 """
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -48,7 +48,23 @@ Rules:
 
 
 class GeminiProvider:
-    MODEL = "gemini-3-flash-preview"
+    """Tries a chain of models, not just one.
+
+    A single model - especially a "-preview" one, which is what's needed
+    today because Google's free tier rejects the stable aliases for new API
+    keys - is a single point of failure. Google's own 503s here are
+    capacity-based and model-specific, not account-wide, so falling through
+    to the next model on a transient server error genuinely improves
+    availability rather than just retrying the same contended model.
+    """
+
+    MODEL_CHAIN: ClassVar[list[str]] = [
+        "gemini-3-flash-preview",
+        "gemini-flash-latest",
+        "gemini-3.5-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-3.1-flash-lite",
+    ]
 
     def __init__(self) -> None:
         from google import genai
@@ -61,20 +77,38 @@ class GeminiProvider:
     async def classify_and_draft(
         self, message: str, snippets: list[str]
     ) -> LLMTriageOutput:
-        from google.genai import types
+        from google.genai import errors, types
 
         numbered = "\n\n".join(f"[{i + 1}] {s}" for i, s in enumerate(snippets))
         prompt = f"{SYSTEM_PROMPT}\n\nSnippets:\n{numbered or '(none provided)'}\n\nCustomer message:\n{message}"
 
-        response = await self._client.aio.models.generate_content(
-            model=self.MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=LLMTriageOutput,
-            ),
-        )
-        return LLMTriageOutput.model_validate_json(response.text)
+        last_error: Exception | None = None
+        for model in self.MODEL_CHAIN:
+            try:
+                response = await self._client.aio.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=LLMTriageOutput,
+                    ),
+                )
+                return LLMTriageOutput.model_validate_json(response.text)
+            except errors.ServerError as e:
+                # 503/500-class: this model is overloaded or briefly down.
+                # Worth trying the next one in the chain.
+                last_error = e
+                continue
+            except errors.ClientError as e:
+                # 404 (model doesn't exist for this key/tier), 400, etc. -
+                # retrying with a different model is exactly the right move,
+                # not a bug in our request.
+                last_error = e
+                continue
+
+        raise RuntimeError(
+            f"All models in the fallback chain failed. Last error: {last_error}"
+        ) from last_error
 
 
 _provider: LLMProvider | None = None
