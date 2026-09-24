@@ -30,9 +30,18 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     google_api_key: str | None = None
 
-    oidc_issuer_url: str | None = None
-    oidc_client_id: str | None = None
-    oidc_client_secret: str | None = None
+    # WorkOS handles *who* someone is (SSO against a customer's own IdP).
+    # It never manages our tenant/user data - a successful login is
+    # exchanged for our own JWT (jwt_secret) that every other endpoint
+    # verifies. See app/services/auth.py.
+    workos_client_id: str | None = None
+    workos_api_key: str | None = None
+    jwt_secret: str = "dev-only-insecure-secret-change-me"
+    jwt_expiry_minutes: int = 60
+    # Used to build the SSO redirect_uri (must match what's registered in
+    # WorkOS). Render's URL locally would be your ngrok/dev tunnel; in
+    # production it's the real API domain.
+    app_base_url: str = "http://localhost:8000"
 
     langfuse_host: str | None = None
     langfuse_public_key: str | None = None

@@ -4,4 +4,5 @@ line-length = 100
 [tool.ruff.lint]
 ignore = [
     "EXE002",  # false positive on Windows bind mounts (Docker Desktop marks everything +x)
+    "B008",    # FastAPI's Depends()-as-default-argument is the intended idiom, not a bug
 ]
