@@ -58,11 +58,14 @@ class GeminiProvider:
     availability rather than just retrying the same contended model.
     """
 
+    # gemini-2.5-flash and gemini-2.5-flash-lite are excluded deliberately -
+    # confirmed 404 ("no longer available to new users") on a freshly
+    # created API key, so they'd waste a fallback slot on every failure.
     MODEL_CHAIN: ClassVar[list[str]] = [
         "gemini-3-flash-preview",
         "gemini-flash-latest",
         "gemini-3.5-flash-lite",
-        "gemini-2.5-flash",
+        "gemini-3.7-flash",
         "gemini-3.1-flash-lite",
     ]
 
