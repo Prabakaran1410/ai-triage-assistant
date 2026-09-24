@@ -27,7 +27,10 @@ class Citation(BaseModel):
 
 
 class TriageRequest(BaseModel):
-    tenant_id: str
+    # No tenant_id here deliberately: it comes from the verified JWT
+    # (app/core/security.py), never from what a caller claims in the body.
+    # A client that could set its own tenant_id could read any tenant's
+    # knowledge base just by asking.
     message: str = Field(min_length=1)
     channel: str = "api"
 

@@ -81,10 +81,17 @@ async def main() -> None:
             )
 
     print(f"Seeded {len(DEMO_CHUNKS)} chunks for demo tenant: {tenant_id}")
-    print("Try:")
+    print()
+    print("/triage now requires a bearer token (tenant_id comes from it, not the body).")
+    print("Mint a dev test token for this tenant (bypasses real WorkOS SSO - see")
+    print("scripts/issue_test_token.py for why this exists):")
+    print(f"  python scripts/issue_test_token.py {tenant_id}")
+    print()
+    print("Then:")
     print(
-        f'  curl -X POST <api-url>/triage -H "Content-Type: application/json" '
-        f'-d \'{{"tenant_id": "{tenant_id}", "message": "How much does the Growth plan cost?"}}\''
+        '  curl -X POST <api-url>/triage -H "Content-Type: application/json" '
+        '-H "Authorization: Bearer <token>" '
+        '-d \'{"message": "How much does the Growth plan cost?"}\''
     )
 
 

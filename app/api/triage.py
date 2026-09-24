@@ -1,8 +1,9 @@
 import datetime as dt
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.security import CurrentUser, get_current_user
 from app.models.triage import Citation, Intent, TriageRequest, TriageResponse
 from app.services.escalation import STALE_DAYS_THRESHOLD, should_escalate
 from app.services.llm import LLMTriageOutput, get_llm_provider
@@ -52,8 +53,11 @@ def _has_stale_source(chunks: list[RetrievedChunk], used_indices: list[int]) -> 
 
 
 @router.post("/triage", response_model=TriageResponse)
-async def triage(request: TriageRequest) -> TriageResponse:
-    chunks = await retrieve_chunks(request.tenant_id, request.message, k=TOP_K)
+async def triage(
+    request: TriageRequest, current_user: CurrentUser = Depends(get_current_user)
+) -> TriageResponse:
+    tenant_id = current_user.tenant_id
+    chunks = await retrieve_chunks(tenant_id, request.message, k=TOP_K)
 
     provider = get_llm_provider()
     try:
@@ -67,7 +71,7 @@ async def triage(request: TriageRequest) -> TriageResponse:
         # confidence. A 500 here would tell an integrator "this request
         # failed"; what actually happened is "we can't safely answer this
         # one - a human should", which is a normal, structured outcome.
-        logger.exception("LLM provider failed for tenant=%s", request.tenant_id)
+        logger.exception("LLM provider failed for tenant=%s", tenant_id)
         return TriageResponse(
             intent=Intent.OTHER,
             priority="high",
