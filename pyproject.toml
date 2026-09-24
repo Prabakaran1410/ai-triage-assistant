@@ -1,0 +1,7 @@
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+ignore = [
+    "EXE002",  # false positive on Windows bind mounts (Docker Desktop marks everything +x)
+]

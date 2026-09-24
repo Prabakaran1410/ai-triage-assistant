@@ -13,7 +13,16 @@ class Settings(BaseSettings):
 
     environment: str = "development"
 
+    # Admin connection - migrations only (scripts/migrate.py). Never used by
+    # the running API: it's a superuser/owner role and Postgres does not
+    # enforce row-level security against it (see db/migrations/README.md).
     database_url: str = "postgresql+asyncpg://triage:change-me@localhost:5432/triage"
+
+    # Runtime connection - unprivileged `triage_app` role, RLS-enforced.
+    # Falls back to database_url only so local dev/tests work before Phase 0's
+    # role migration has been run; production must always set this.
+    app_database_url: str | None = None
+
     redis_url: str = "redis://localhost:6379/0"
 
     llm_provider: str = "anthropic"
