@@ -60,4 +60,11 @@ async def tenant_scoped_connection(tenant_id: str) -> AsyncIterator[AsyncConnect
             text("select set_config('app.tenant_id', :tenant_id, true)"),
             {"tenant_id": tenant_id},
         )
+        # Belt and suspenders alongside db/migrations/0004_extensions_schema.sql:
+        # ALTER ROLE ... SET search_path only takes effect for a brand-new
+        # backend session, which the Supabase pooler doesn't guarantee on
+        # every checkout. Set it explicitly here too, since a pooled
+        # connection with the wrong search_path can't find pgvector's
+        # `vector` type (Supabase installs it in an "extensions" schema).
+        await conn.execute(text("set search_path = public, extensions"))
         yield conn
