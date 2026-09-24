@@ -8,6 +8,26 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+      APP_DATABASE_URL: postgresql+asyncpg://triage_app:ci-only-password@localhost:5432/postgres
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,5 +37,11 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Lint
         run: ruff check .
-      - name: Test
+      - name: Apply migrations (admin role)
+        run: python scripts/migrate.py
+      - name: Set triage_app password
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
+            -c "alter role triage_app with password 'ci-only-password';"
+      - name: Test (including live tenant isolation against ephemeral Postgres)
         run: pytest -q
