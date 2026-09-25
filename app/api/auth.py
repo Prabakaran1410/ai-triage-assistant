@@ -30,7 +30,18 @@ async def login(
 
 
 @router.get("/callback")
-async def callback(code: str = Query(...)):
+async def callback(
+    code: str | None = Query(None),
+    error: str | None = Query(None),
+    error_description: str | None = Query(None),
+):
+    # On a failed login WorkOS redirects back with error/error_description and
+    # no `code`. Surface that as a clear 400 instead of a 422 about a missing
+    # field, which hides the real reason.
+    if error or not code:
+        raise HTTPException(
+            400, f"SSO login failed: {error_description or error or 'no authorization code'}"
+        )
     try:
         token = await handle_sso_callback(code)
     except ValueError as e:
