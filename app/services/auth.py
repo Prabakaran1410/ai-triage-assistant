@@ -22,6 +22,13 @@ from app.core.config import get_settings
 from app.core.db import get_engine, tenant_scoped_connection
 
 ALGORITHM = "HS256"
+# Tolerated clock difference between whoever issued a token and whoever
+# verifies it. Zero leeway means a 1-second skew (seen between a dev
+# container and Render) rejects a perfectly valid token with "not yet valid
+# (iat)"; once there is more than one API instance the same thing would
+# happen intermittently in production. Kept small so it doesn't meaningfully
+# extend a token's life.
+CLOCK_SKEW_LEEWAY_SECONDS = 30
 
 
 def _client():
@@ -116,6 +123,11 @@ async def handle_sso_callback(code: str) -> str:
 def verify_jwt(token: str) -> dict:
     settings = get_settings()
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[ALGORITHM])
+        return jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[ALGORITHM],
+            leeway=CLOCK_SKEW_LEEWAY_SECONDS,
+        )
     except jwt.PyJWTError as e:
         raise ValueError(f"invalid or expired token: {e}") from e
