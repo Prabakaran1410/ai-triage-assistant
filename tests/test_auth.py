@@ -33,3 +33,31 @@ def test_triage_with_invalid_token_is_rejected():
         headers={"Authorization": "Bearer garbage"},
     )
     assert response.status_code == 401
+
+
+def test_authorization_url_uses_the_sdks_real_parameter_names(monkeypatch):
+    """Regression: the WorkOS SDK takes `organization`, not `organization_id`.
+
+    A wrong keyword only fails at request time (a 500 on /auth/login), so pin
+    it here against the SDK's actual signature instead of a mock.
+    """
+    import inspect
+
+    from workos.sso import SSO
+
+    monkeypatch.setenv("WORKOS_API_KEY", "sk_test_dummy")
+    monkeypatch.setenv("WORKOS_CLIENT_ID", "client_dummy")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        from app.services.auth import get_authorization_url
+
+        params = inspect.signature(SSO.get_authorization_url).parameters
+        assert "organization" in params and "organization_id" not in params
+
+        url = get_authorization_url("org_test", "https://example.com/cb", "state123")
+        assert url.startswith("https://api.workos.com/sso/authorize")
+        assert "organization=org_test" in url
+    finally:
+        get_settings.cache_clear()

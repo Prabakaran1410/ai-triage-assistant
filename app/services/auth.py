@@ -37,7 +37,7 @@ def _client():
 
 def get_authorization_url(organization_id: str, redirect_uri: str, state: str) -> str:
     return _client().sso.get_authorization_url(
-        organization_id=organization_id,
+        organization=organization_id,
         redirect_uri=redirect_uri,
         state=state,
     )
