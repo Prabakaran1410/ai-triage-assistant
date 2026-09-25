@@ -91,3 +91,38 @@ def test_profile_exchange_uses_keyword_code_argument():
 
     param = inspect.signature(SSO.get_profile_and_token).parameters["code"]
     assert param.kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def _token_issued_at(offset_seconds: int) -> str:
+    """A token whose iat/exp are shifted relative to now, signed like ours."""
+    import datetime as dt
+
+    import jwt
+
+    from app.core.config import get_settings
+    from app.services.auth import ALGORITHM
+
+    now = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=offset_seconds)
+    return jwt.encode(
+        {
+            "sub": "u1",
+            "email": "a@example.com",
+            "tenant_id": "t1",
+            "role": "agent",
+            "iat": now,
+            "exp": now + dt.timedelta(minutes=5),
+        },
+        get_settings().jwt_secret,
+        algorithm=ALGORITHM,
+    )
+
+
+def test_token_from_a_slightly_fast_clock_is_accepted():
+    # Regression: a 1 s skew between issuer and verifier used to fail with
+    # "The token is not yet valid (iat)".
+    assert verify_jwt(_token_issued_at(+5))["sub"] == "u1"
+
+
+def test_token_from_a_badly_wrong_clock_is_still_rejected():
+    with pytest.raises(ValueError):
+        verify_jwt(_token_issued_at(+300))
