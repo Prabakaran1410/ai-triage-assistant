@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter, Depends
 
 from app.core.security import CurrentUser, get_current_user
+from app.core.tracing import observe, redact
 from app.models.triage import Citation, Intent, TriageRequest, TriageResponse
 from app.services.escalation import STALE_DAYS_THRESHOLD, should_escalate
 from app.services.llm import LLMTriageOutput, get_llm_provider
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 TOP_K = 5
+LLM_UNAVAILABLE = "LLM provider unavailable"
 
 
 def _build_citations(
@@ -52,12 +54,19 @@ def _has_stale_source(chunks: list[RetrievedChunk], used_indices: list[int]) -> 
     return False
 
 
-@router.post("/triage", response_model=TriageResponse)
-async def triage(
-    request: TriageRequest, current_user: CurrentUser = Depends(get_current_user)
-) -> TriageResponse:
-    tenant_id = current_user.tenant_id
-    chunks = await retrieve_chunks(tenant_id, request.message, k=TOP_K)
+async def _run_triage(request: TriageRequest, tenant_id: str) -> TriageResponse:
+    with observe(
+        "retrieval", as_type="retriever", input=redact(request.message)
+    ) as retrieval:
+        chunks = await retrieve_chunks(tenant_id, request.message, k=TOP_K)
+        # Which chunks came back and how close they were is the first thing
+        # to look at when an answer is wrong; neither carries customer text.
+        retrieval.update(
+            output=[
+                {"source_id": c.source_id, "distance": round(c.distance, 4)} for c in chunks
+            ],
+            metadata={"k": TOP_K, "hits": len(chunks)},
+        )
 
     provider = get_llm_provider()
     try:
@@ -79,7 +88,7 @@ async def triage(
             draft_reply=None,
             citations=[],
             escalate=True,
-            escalation_reason="LLM provider unavailable",
+            escalation_reason=LLM_UNAVAILABLE,
         )
 
     citations = _build_citations(chunks, result.used_snippet_indices)
@@ -101,3 +110,33 @@ async def triage(
         escalate=escalate,
         escalation_reason=reason,
     )
+
+
+@router.post("/triage", response_model=TriageResponse)
+async def triage(
+    request: TriageRequest, current_user: CurrentUser = Depends(get_current_user)
+) -> TriageResponse:
+    tenant_id = current_user.tenant_id
+    with observe(
+        "triage",
+        as_type="span",
+        input=redact(request.message),
+        metadata={
+            "tenant_id": tenant_id,
+            "user_id": current_user.user_id,
+            "role": current_user.role,
+            "channel": request.channel,
+        },
+    ) as root:
+        response = await _run_triage(request, tenant_id)
+        root.update(
+            output={
+                "intent": response.intent.value,
+                "confidence": response.confidence,
+                "escalate": response.escalate,
+                "escalation_reason": response.escalation_reason,
+                "cited_sources": [c.source_id for c in response.citations],
+            },
+            level="WARNING" if response.escalation_reason == LLM_UNAVAILABLE else None,
+        )
+        return response

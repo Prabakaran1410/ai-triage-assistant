@@ -12,6 +12,7 @@ from typing import ClassVar, Protocol
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.core.tracing import observe, redact
 from app.models.triage import Intent
 
 
@@ -86,28 +87,46 @@ class GeminiProvider:
         prompt = f"{SYSTEM_PROMPT}\n\nSnippets:\n{numbered or '(none provided)'}\n\nCustomer message:\n{message}"
 
         last_error: Exception | None = None
-        for model in self.MODEL_CHAIN:
-            try:
-                response = await self._client.aio.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        response_schema=LLMTriageOutput,
-                    ),
+        for attempt, model in enumerate(self.MODEL_CHAIN, start=1):
+            # One generation per attempt, so a trace shows the whole fallback
+            # chain: which models were tried, which failed and why, which
+            # finally answered.
+            with observe(
+                "gemini-classify-and-draft",
+                as_type="generation",
+                model=model,
+                input=redact(prompt),
+                metadata={"attempt": attempt, "snippets": len(snippets)},
+            ) as generation:
+                try:
+                    response = await self._client.aio.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            response_schema=LLMTriageOutput,
+                        ),
+                    )
+                except (errors.ServerError, errors.ClientError) as e:
+                    # ServerError: 503/500-class, the model is overloaded or
+                    # briefly down. ClientError: 404 (model not available to
+                    # this key/tier), 429, etc. Either way the next model in
+                    # the chain is the right move, not a bug in our request.
+                    generation.update(
+                        level="ERROR", status_message=f"{type(e).__name__}: {str(e)[:200]}"
+                    )
+                    last_error = e
+                    continue
+
+                usage = getattr(response, "usage_metadata", None)
+                generation.update(
+                    output=redact(response.text),
+                    usage_details={
+                        "input": getattr(usage, "prompt_token_count", None) or 0,
+                        "output": getattr(usage, "candidates_token_count", None) or 0,
+                    },
                 )
                 return LLMTriageOutput.model_validate_json(response.text)
-            except errors.ServerError as e:
-                # 503/500-class: this model is overloaded or briefly down.
-                # Worth trying the next one in the chain.
-                last_error = e
-                continue
-            except errors.ClientError as e:
-                # 404 (model doesn't exist for this key/tier), 400, etc. -
-                # retrying with a different model is exactly the right move,
-                # not a bug in our request.
-                last_error = e
-                continue
 
         raise RuntimeError(
             f"All models in the fallback chain failed. Last error: {last_error}"
