@@ -5,11 +5,22 @@ layer on top of this once the multi-tenant data model lands.
 """
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _strip_wrapping_quotes(cls, value):
+        # `docker --env-file` (unlike python-dotenv) keeps the quotes in
+        # KEY="value", so a quoted secret silently stops matching what the
+        # deployed service holds. Normalise once, here.
+        if isinstance(value, str) and len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            return value[1:-1]
+        return value
 
     environment: str = "development"
 
@@ -46,6 +57,12 @@ class Settings(BaseSettings):
     langfuse_host: str | None = None
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
+    # Customer messages, knowledge snippets and drafts are NOT sent to
+    # Langfuse unless this is turned on. Tenant/intent/confidence/model/
+    # tokens/latency/retrieval hits are always traced; those carry no
+    # customer text. Turn on per environment, knowing the content leaves
+    # our infrastructure for Langfuse's (see app/core/tracing.py).
+    langfuse_capture_content: bool = False
 
 
 @lru_cache
