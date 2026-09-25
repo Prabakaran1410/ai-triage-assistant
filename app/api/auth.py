@@ -1,3 +1,4 @@
+import logging
 import secrets
 
 from fastapi import APIRouter, HTTPException, Query
@@ -5,6 +6,8 @@ from fastapi.responses import RedirectResponse
 
 from app.core.config import get_settings
 from app.services.auth import get_authorization_url, handle_sso_callback
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -46,4 +49,10 @@ async def callback(
         token = await handle_sso_callback(code)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        # WorkOS rejected the code, a DB error, etc. Log the real cause so it
+        # is visible in Render's logs, and tell the caller it was the SSO
+        # exchange that failed rather than returning an opaque 500.
+        logger.exception("SSO callback failed")
+        raise HTTPException(502, "SSO login could not be completed") from e
     return {"access_token": token, "token_type": "bearer"}

@@ -102,7 +102,7 @@ def issue_jwt(*, user_id: str, email: str, tenant_id: str, role: str) -> str:
 
 async def handle_sso_callback(code: str) -> str:
     """Exchange a WorkOS authorization code for our own JWT."""
-    result = _client().sso.get_profile_and_token(code)
+    result = _client().sso.get_profile_and_token(code=code)
     profile = result.profile
 
     if not profile.organization_id:

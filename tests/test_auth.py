@@ -77,3 +77,17 @@ def test_callback_surfaces_workos_error_instead_of_a_422():
 
 def test_callback_without_code_or_error_is_a_400():
     assert client.get("/auth/callback").status_code == 400
+
+
+def test_profile_exchange_uses_keyword_code_argument():
+    """Regression: SSO.get_profile_and_token is keyword-only (`*, code=...`).
+
+    Passing the code positionally raises TypeError only when a real login
+    arrives, so pin it against the SDK's signature.
+    """
+    import inspect
+
+    from workos.sso import SSO
+
+    param = inspect.signature(SSO.get_profile_and_token).parameters["code"]
+    assert param.kind is inspect.Parameter.KEYWORD_ONLY
