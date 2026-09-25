@@ -61,3 +61,19 @@ def test_authorization_url_uses_the_sdks_real_parameter_names(monkeypatch):
         assert "organization=org_test" in url
     finally:
         get_settings.cache_clear()
+
+
+def test_callback_surfaces_workos_error_instead_of_a_422():
+    response = client.get(
+        "/auth/callback",
+        params={
+            "error": "profile_not_allowed_outside_organization",
+            "error_description": "Profile domain does not belong to the target Organization.",
+        },
+    )
+    assert response.status_code == 400
+    assert "does not belong to the target Organization" in response.json()["detail"]
+
+
+def test_callback_without_code_or_error_is_a_400():
+    assert client.get("/auth/callback").status_code == 400
