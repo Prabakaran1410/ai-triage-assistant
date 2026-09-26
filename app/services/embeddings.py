@@ -43,3 +43,22 @@ async def embed_text(text: str, *, task_type: str = "RETRIEVAL_DOCUMENT") -> lis
         ),
     )
     return response.embeddings[0].values
+
+
+async def embed_texts(texts: list[str], *, task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
+    """Embed many texts in one request (used when ingesting a knowledge base)."""
+    if not texts:
+        return []
+    client = _get_client()
+    response = await client.aio.models.embed_content(
+        model=EMBEDDING_MODEL,
+        contents=texts,
+        config=types.EmbedContentConfig(
+            task_type=task_type,
+            output_dimensionality=EMBEDDING_DIMENSIONS,
+        ),
+    )
+    embeddings = [e.values for e in response.embeddings]
+    if len(embeddings) != len(texts):
+        raise RuntimeError(f"Asked for {len(texts)} embeddings, got {len(embeddings)}")
+    return embeddings

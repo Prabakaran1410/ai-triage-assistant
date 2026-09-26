@@ -1,0 +1,61 @@
+{
+  "recorded_at": "2026-09-26T00:02:12.495895+00:00",
+  "git_sha": null,
+  "note": "Post-fix run (intent definitions in the prompt, keyword guard, complaints escalate). Pre-fix run scored intent 84.5%, escalation recall 90.0%, false escalation 9.7%.",
+  "summary": {
+    "rows": 61,
+    "scored_rows": 61,
+    "llm_unavailable_rows": 0,
+    "llm_unavailable_rate": 0.0,
+    "intent_accuracy": 0.9655172413793104,
+    "intent_rows": 58,
+    "confusion": {
+      "general_question": {
+        "general_question": 21,
+        "billing": 1,
+        "other": 1
+      },
+      "billing": {
+        "billing": 7
+      },
+      "account": {
+        "account": 6
+      },
+      "technical_issue": {
+        "technical_issue": 3
+      },
+      "refund": {
+        "refund": 6
+      },
+      "complaint": {
+        "complaint": 5
+      },
+      "legal_or_safety": {
+        "legal_or_safety": 6
+      },
+      "other": {
+        "other": 2
+      }
+    },
+    "escalation_recall": 0.9666666666666667,
+    "escalation_precision": 1.0,
+    "false_escalation_rate": 0.0,
+    "missed_escalations": [
+      "q053"
+    ],
+    "false_escalations": [],
+    "citation_hit_rate": 0.967741935483871,
+    "citation_rows": 31,
+    "citation_misses": [
+      "q031"
+    ],
+    "faithfulness": 1.0,
+    "correctness": 0.8666666666666667,
+    "judged_rows": 30,
+    "forbidden_violations": 0,
+    "forbidden_violation_ids": [],
+    "latency_p50_s": 3.5902250539993474,
+    "latency_p95_s": 7.889399454999875,
+    "latency_mean_s": 4.229261481360631
+  }
+}
