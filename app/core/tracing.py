@@ -68,6 +68,14 @@ def reset_tracer() -> None:
     _initialised = False
 
 
+def disable_tracer() -> None:
+    """Turn tracing off for this process (e.g. bulk evaluation runs, which
+    would otherwise create one trace per labeled row)."""
+    global _client, _initialised
+    _client = None
+    _initialised = True
+
+
 def redact(value: Any) -> Any:
     """Pass customer-derived content through only if capture is enabled."""
     return value if get_settings().langfuse_capture_content else _NOT_CAPTURED

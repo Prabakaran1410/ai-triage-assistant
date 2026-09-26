@@ -54,7 +54,7 @@ def _has_stale_source(chunks: list[RetrievedChunk], used_indices: list[int]) -> 
     return False
 
 
-async def _run_triage(request: TriageRequest, tenant_id: str) -> TriageResponse:
+async def run_triage(request: TriageRequest, tenant_id: str) -> TriageResponse:
     with observe(
         "retrieval", as_type="retriever", input=redact(request.message)
     ) as retrieval:
@@ -99,6 +99,7 @@ async def _run_triage(request: TriageRequest, tenant_id: str) -> TriageResponse:
         confidence=result.confidence,
         citations=citations,
         has_stale_source=has_stale_source,
+        message=request.message,
     )
 
     return TriageResponse(
@@ -128,7 +129,7 @@ async def triage(
             "channel": request.channel,
         },
     ) as root:
-        response = await _run_triage(request, tenant_id)
+        response = await run_triage(request, tenant_id)
         root.update(
             output={
                 "intent": response.intent.value,

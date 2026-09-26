@@ -7,13 +7,15 @@ retrieval results for those indices. An index the model invents that we
 didn't send back is dropped, not trusted - see build_citations() in
 app/api/triage.py.
 """
-from typing import ClassVar, Protocol
+from typing import ClassVar, Protocol, TypeVar
 
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.tracing import observe, redact
 from app.models.triage import Intent
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class LLMTriageOutput(BaseModel):
@@ -35,6 +37,21 @@ You are given a customer message and a numbered list of knowledge-base
 snippets (numbered from 1). Decide the intent, how confident you are that
 the drafted reply is fully supported by the snippets, and write a draft
 reply.
+
+Choose exactly one intent:
+- billing: charges, payments, declined cards, promo codes, price adjustments, membership fees.
+- refund: the customer is asking to get money back now (a refund, a return for a
+  refund, cancelling an order for their money). A question about what the return
+  or refund POLICY is, is a general_question, not a refund.
+- technical_issue: the website, app, checkout or a link is not working.
+- account: login, password (including reset emails), email address, two-factor,
+  loyalty points, membership status.
+- general_question: information about shipping, hours, policies, products, sizing.
+- complaint: the customer is unhappy about service or their experience.
+- legal_or_safety: legal threats, chargeback threats, injury or product-safety
+  concerns, privacy or data-deletion requests, fraud or phishing reports.
+- other: sponsorships, spam, unintelligible messages.
+If a message fits both refund and legal_or_safety, choose legal_or_safety.
 
 Rules:
 - Only use facts that appear in the numbered snippets. Never state a policy,
@@ -81,10 +98,30 @@ class GeminiProvider:
     async def classify_and_draft(
         self, message: str, snippets: list[str]
     ) -> LLMTriageOutput:
-        from google.genai import errors, types
-
         numbered = "\n\n".join(f"[{i + 1}] {s}" for i, s in enumerate(snippets))
-        prompt = f"{SYSTEM_PROMPT}\n\nSnippets:\n{numbered or '(none provided)'}\n\nCustomer message:\n{message}"
+        prompt = (
+            f"{SYSTEM_PROMPT}\n\nSnippets:\n{numbered or '(none provided)'}"
+            f"\n\nCustomer message:\n{message}"
+        )
+        return await self.generate_structured(
+            prompt,
+            LLMTriageOutput,
+            name="gemini-classify-and-draft",
+            metadata={"snippets": len(snippets)},
+        )
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        schema: type[T],
+        *,
+        name: str,
+        metadata: dict | None = None,
+    ) -> T:
+        """Run `prompt` through the model chain and parse the JSON reply as
+        `schema`. Shared by the triage call and by the evaluation judge so
+        both get the same fallback behaviour and the same tracing."""
+        from google.genai import errors, types
 
         last_error: Exception | None = None
         for attempt, model in enumerate(self.MODEL_CHAIN, start=1):
@@ -92,11 +129,11 @@ class GeminiProvider:
             # chain: which models were tried, which failed and why, which
             # finally answered.
             with observe(
-                "gemini-classify-and-draft",
+                name,
                 as_type="generation",
                 model=model,
                 input=redact(prompt),
-                metadata={"attempt": attempt, "snippets": len(snippets)},
+                metadata={"attempt": attempt, **(metadata or {})},
             ) as generation:
                 try:
                     response = await self._client.aio.models.generate_content(
@@ -104,7 +141,7 @@ class GeminiProvider:
                         contents=prompt,
                         config=types.GenerateContentConfig(
                             response_mime_type="application/json",
-                            response_schema=LLMTriageOutput,
+                            response_schema=schema,
                         ),
                     )
                 except (errors.ServerError, errors.ClientError) as e:
@@ -126,7 +163,7 @@ class GeminiProvider:
                         "output": getattr(usage, "candidates_token_count", None) or 0,
                     },
                 )
-                return LLMTriageOutput.model_validate_json(response.text)
+                return schema.model_validate_json(response.text)
 
         raise RuntimeError(
             f"All models in the fallback chain failed. Last error: {last_error}"
