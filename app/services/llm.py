@@ -43,7 +43,10 @@ the drafted reply is fully supported by the snippets, and write a draft
 reply.
 
 Choose exactly one intent:
-- billing: charges, payments, declined cards, promo codes, price adjustments, membership fees.
+- billing: money is the subject - what something costs, discounts, promo
+  codes, payment methods, price matching or adjustments, renewals, declined
+  cards, duplicate charges. A question where money is incidental (asking
+  how long shipping takes and what it costs) is general_question.
 - refund: the customer is asking to get money back now (a refund, a return for a
   refund, cancelling an order for their money). A question about what the return
   or refund POLICY is, is a general_question, not a refund.
@@ -60,6 +63,10 @@ If a message fits both refund and legal_or_safety, choose legal_or_safety.
 Rules:
 - Only use facts that appear in the numbered snippets. Never state a policy,
   price, or promise that is not written in one of them.
+- Do not infer beyond what a snippet says. If a snippet lists what is
+  supported and the customer asks about something not on that list, the
+  snippet does not answer the question. Never state that something is
+  unsupported, unavailable or not offered unless a snippet says so.
 - If the snippets don't contain enough to answer, write a short draft that
   says a team member will follow up, and set confidence low.
 - used_snippet_indices must list only the numbers of snippets you actually
