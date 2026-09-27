@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import auth, health, triage
+from app.api import auth, events, health, triage
 from app.core.db import dispose_engine
 from app.core.tracing import flush_tracer
 
@@ -23,3 +23,4 @@ app = FastAPI(title="AI Triage Assistant", version="0.1.0", lifespan=lifespan)
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(triage.router)
+app.include_router(events.router)
