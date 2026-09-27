@@ -63,4 +63,7 @@ async def judge(message: str, draft: str, sources: list[str], reference: str) ->
         sources="\n".join(f"- {s}" for s in sources) or "(none)",
         reference=reference,
     )
-    return await provider.generate_structured(prompt, JudgeVerdict, name="eval-judge")
+    verdict, _model = await provider.generate_structured(
+        prompt, JudgeVerdict, name="eval-judge"
+    )
+    return verdict

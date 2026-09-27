@@ -1,5 +1,6 @@
 import datetime as dt
 import logging
+import time
 
 from fastapi import APIRouter, Depends
 
@@ -7,6 +8,7 @@ from app.core.security import CurrentUser, get_current_user
 from app.core.tracing import observe, redact
 from app.models.triage import Citation, Intent, TriageRequest, TriageResponse
 from app.services.escalation import STALE_DAYS_THRESHOLD, should_escalate
+from app.services.events import record_triage_decision
 from app.services.llm import LLMTriageOutput, get_llm_provider
 from app.services.retrieval import RetrievedChunk, retrieve_chunks
 
@@ -54,7 +56,11 @@ def _has_stale_source(chunks: list[RetrievedChunk], used_indices: list[int]) -> 
     return False
 
 
-async def run_triage(request: TriageRequest, tenant_id: str) -> TriageResponse:
+async def run_triage(request: TriageRequest, tenant_id: str) -> tuple[TriageResponse, str | None]:
+    """The pipeline itself. Returns the response and the model that produced
+    it (None if no model answered). Deliberately does not persist: the
+    evaluation runner calls this directly, and synthetic runs must not write
+    into the tenant's real record. Persistence belongs to the endpoint."""
     with observe(
         "retrieval", as_type="retriever", input=redact(request.message)
     ) as retrieval:
@@ -70,7 +76,8 @@ async def run_triage(request: TriageRequest, tenant_id: str) -> TriageResponse:
 
     provider = get_llm_provider()
     try:
-        result: LLMTriageOutput = await provider.classify_and_draft(
+        result: LLMTriageOutput
+        result, model = await provider.classify_and_draft(
             message=request.message,
             snippets=[c.content for c in chunks],
         )
@@ -81,14 +88,17 @@ async def run_triage(request: TriageRequest, tenant_id: str) -> TriageResponse:
         # failed"; what actually happened is "we can't safely answer this
         # one - a human should", which is a normal, structured outcome.
         logger.exception("LLM provider failed for tenant=%s", tenant_id)
-        return TriageResponse(
-            intent=Intent.OTHER,
-            priority="high",
-            confidence=0.0,
-            draft_reply=None,
-            citations=[],
-            escalate=True,
-            escalation_reason=LLM_UNAVAILABLE,
+        return (
+            TriageResponse(
+                intent=Intent.OTHER,
+                priority="high",
+                confidence=0.0,
+                draft_reply=None,
+                citations=[],
+                escalate=True,
+                escalation_reason=LLM_UNAVAILABLE,
+            ),
+            None,
         )
 
     citations = _build_citations(chunks, result.used_snippet_indices)
@@ -102,14 +112,17 @@ async def run_triage(request: TriageRequest, tenant_id: str) -> TriageResponse:
         message=request.message,
     )
 
-    return TriageResponse(
-        intent=result.intent,
-        priority="high" if escalate else "normal",
-        confidence=result.confidence,
-        draft_reply=result.draft_reply,
-        citations=citations,
-        escalate=escalate,
-        escalation_reason=reason,
+    return (
+        TriageResponse(
+            intent=result.intent,
+            priority="high" if escalate else "normal",
+            confidence=result.confidence,
+            draft_reply=result.draft_reply,
+            citations=citations,
+            escalate=escalate,
+            escalation_reason=reason,
+        ),
+        model,
     )
 
 
@@ -129,7 +142,26 @@ async def triage(
             "channel": request.channel,
         },
     ) as root:
-        response = await run_triage(request, tenant_id)
+        started = time.perf_counter()
+        response, model = await run_triage(request, tenant_id)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+
+        # Unlike tracing, this is not best-effort: if the decision cannot be
+        # recorded the request fails, because an unrecorded answer defeats
+        # the audit trail, and an unrecorded escalation is one no reviewer
+        # will ever see. See app/services/events.py.
+        recorded = await record_triage_decision(
+            tenant_id=tenant_id,
+            message=request.message,
+            channel=request.channel,
+            response=response,
+            requested_by=current_user.user_id,
+            latency_ms=latency_ms,
+            model=model,
+        )
+        response.event_id = recorded.event_id
+        response.status = recorded.status
+
         root.update(
             output={
                 "intent": response.intent.value,
@@ -137,6 +169,7 @@ async def triage(
                 "escalate": response.escalate,
                 "escalation_reason": response.escalation_reason,
                 "cited_sources": [c.source_id for c in response.citations],
+                "event_id": recorded.event_id,
             },
             level="WARNING" if response.escalation_reason == LLM_UNAVAILABLE else None,
         )

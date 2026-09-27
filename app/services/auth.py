@@ -66,7 +66,7 @@ async def _resolve_tenant_id(organization_id: str) -> str:
     return str(row.id)
 
 
-async def _upsert_user(tenant_id: str, email: str) -> tuple[str, str]:
+async def upsert_user(tenant_id: str, email: str) -> tuple[str, str]:
     """Returns (user_id, role). New users default to the least-privileged
     role - promotion to reviewer/admin is a deliberate action elsewhere, not
     something a first login grants."""
@@ -116,7 +116,7 @@ async def handle_sso_callback(code: str) -> str:
         raise ValueError("SSO profile has no organization_id - cannot map to a tenant")
 
     tenant_id = await _resolve_tenant_id(profile.organization_id)
-    user_id, role = await _upsert_user(tenant_id, profile.email)
+    user_id, role = await upsert_user(tenant_id, profile.email)
     return issue_jwt(user_id=user_id, email=profile.email, tenant_id=tenant_id, role=role)
 
 

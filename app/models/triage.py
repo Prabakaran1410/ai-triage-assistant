@@ -43,3 +43,7 @@ class TriageResponse(BaseModel):
     citations: list[Citation] = Field(default_factory=list)
     escalate: bool
     escalation_reason: str | None = None
+    # Set once the decision is recorded, so a caller can refer to it later
+    # and a console can link straight to the queue item.
+    event_id: str | None = None
+    status: str | None = None

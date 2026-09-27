@@ -28,7 +28,11 @@ class LLMTriageOutput(BaseModel):
 class LLMProvider(Protocol):
     async def classify_and_draft(
         self, message: str, snippets: list[str]
-    ) -> LLMTriageOutput: ...
+    ) -> tuple[LLMTriageOutput, str]:
+        """Returns the parsed output and the model that produced it (the
+        fallback chain means it varies, and an audit record should say
+        which model wrote a customer-facing reply)."""
+        ...
 
 
 SYSTEM_PROMPT = """You triage customer messages for a support team.
@@ -97,7 +101,7 @@ class GeminiProvider:
 
     async def classify_and_draft(
         self, message: str, snippets: list[str]
-    ) -> LLMTriageOutput:
+    ) -> tuple[LLMTriageOutput, str]:
         numbered = "\n\n".join(f"[{i + 1}] {s}" for i, s in enumerate(snippets))
         prompt = (
             f"{SYSTEM_PROMPT}\n\nSnippets:\n{numbered or '(none provided)'}"
@@ -117,10 +121,11 @@ class GeminiProvider:
         *,
         name: str,
         metadata: dict | None = None,
-    ) -> T:
+    ) -> tuple[T, str]:
         """Run `prompt` through the model chain and parse the JSON reply as
-        `schema`. Shared by the triage call and by the evaluation judge so
-        both get the same fallback behaviour and the same tracing."""
+        `schema`. Returns the parsed value and the model that produced it.
+        Shared by the triage call and by the evaluation judge so both get the
+        same fallback behaviour and the same tracing."""
         from google.genai import errors, types
 
         last_error: Exception | None = None
@@ -163,7 +168,7 @@ class GeminiProvider:
                         "output": getattr(usage, "candidates_token_count", None) or 0,
                     },
                 )
-                return schema.model_validate_json(response.text)
+                return schema.model_validate_json(response.text), model
 
         raise RuntimeError(
             f"All models in the fallback chain failed. Last error: {last_error}"
