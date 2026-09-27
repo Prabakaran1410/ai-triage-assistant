@@ -44,3 +44,23 @@ async def get_current_user(
         tenant_id=claims["tenant_id"],
         role=claims["role"],
     )
+
+
+# Roles, most privileged first. `admin` and `reviewer` may act on a queued
+# reply; `agent` may look but not decide. Enforced server-side: the console
+# also hides the buttons, but hiding a button is not access control.
+ROLE_ADMIN = "admin"
+ROLE_REVIEWER = "reviewer"
+ROLE_AGENT = "agent"
+REVIEWER_ROLES = frozenset({ROLE_ADMIN, ROLE_REVIEWER})
+
+
+def require_reviewer(
+    current_user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    if current_user.role not in REVIEWER_ROLES:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"role '{current_user.role}' cannot review replies",
+        )
+    return current_user
