@@ -113,7 +113,11 @@ async def run_row(sem: asyncio.Semaphore, row: dict[str, Any], tenant_id: str) -
 
 
 async def judge_row(sem: asyncio.Semaphore, result: RowResult, row: dict[str, Any]) -> None:
-    if result.llm_unavailable or not result.draft or not row["reference"].strip():
+    # Judge every drafted reply, not only rows with a reference answer:
+    # faithfulness needs just the draft and its sources, and the rows
+    # without a reference (refunds, complaints, unanswerable) are exactly
+    # where a fabricated claim is most likely and least checked.
+    if result.llm_unavailable or not result.draft:
         return
     by_id = {c.source_id: c.content for c in CORPUS}
     sources = [by_id[s] for s in result.cited if s in by_id]

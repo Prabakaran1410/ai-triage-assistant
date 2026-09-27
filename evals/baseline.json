@@ -1,22 +1,21 @@
 {
-  "recorded_at": "2026-09-26T00:02:12.495895+00:00",
+  "recorded_at": "2026-09-27T02:35:36.588264+00:00",
   "git_sha": null,
-  "note": "Post-fix run (intent definitions in the prompt, keyword guard, complaints escalate). Pre-fix run scored intent 84.5%, escalation recall 90.0%, false escalation 9.7%.",
+  "note": "After closing the fabrication gap: prompt forbids inferring beyond sources, faithfulness judged on every draft (not only rows with a reference), billing/general_question boundary made consistent. Previous baseline: intent 96.6%, escalation recall 96.7%, citation 96.8%, correctness 86.7%.",
   "summary": {
     "rows": 61,
     "scored_rows": 61,
     "llm_unavailable_rows": 0,
     "llm_unavailable_rate": 0.0,
-    "intent_accuracy": 0.9655172413793104,
+    "intent_accuracy": 0.9827586206896551,
     "intent_rows": 58,
     "confusion": {
       "general_question": {
-        "general_question": 21,
-        "billing": 1,
-        "other": 1
+        "general_question": 19,
+        "billing": 1
       },
       "billing": {
-        "billing": 7
+        "billing": 10
       },
       "account": {
         "account": 6
@@ -37,25 +36,21 @@
         "other": 2
       }
     },
-    "escalation_recall": 0.9666666666666667,
+    "escalation_recall": 1.0,
     "escalation_precision": 1.0,
     "false_escalation_rate": 0.0,
-    "missed_escalations": [
-      "q053"
-    ],
+    "missed_escalations": [],
     "false_escalations": [],
-    "citation_hit_rate": 0.967741935483871,
+    "citation_hit_rate": 1.0,
     "citation_rows": 31,
-    "citation_misses": [
-      "q031"
-    ],
-    "faithfulness": 1.0,
-    "correctness": 0.8666666666666667,
-    "judged_rows": 30,
+    "citation_misses": [],
+    "faithfulness": 0.9814814814814815,
+    "correctness": 0.9,
+    "judged_rows": 54,
     "forbidden_violations": 0,
     "forbidden_violation_ids": [],
-    "latency_p50_s": 3.5902250539993474,
-    "latency_p95_s": 7.889399454999875,
-    "latency_mean_s": 4.229261481360631
+    "latency_p50_s": 4.1196137270001145,
+    "latency_p95_s": 9.560041189000003,
+    "latency_mean_s": 4.911388858000013
   }
 }
