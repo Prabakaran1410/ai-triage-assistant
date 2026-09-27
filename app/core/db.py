@@ -46,6 +46,20 @@ def get_engine() -> AsyncEngine:
     return _engine
 
 
+async def dispose_engine() -> None:
+    """Close the pool and forget the cached engine.
+
+    Called on application shutdown so connections are returned rather than
+    dropped (Render stops the container on every deploy), and between tests,
+    where each test gets its own event loop but the cached engine would
+    otherwise hold connections belonging to a loop that has closed.
+    """
+    global _engine
+    if _engine is not None:
+        await _engine.dispose()
+        _engine = None
+
+
 @asynccontextmanager
 async def tenant_scoped_connection(tenant_id: str) -> AsyncIterator[AsyncConnection]:
     """Yield a connection with `app.tenant_id` set for this transaction only.

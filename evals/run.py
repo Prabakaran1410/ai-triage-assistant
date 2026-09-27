@@ -80,7 +80,7 @@ async def run_row(sem: asyncio.Semaphore, row: dict[str, Any], tenant_id: str) -
     async with sem:
         started = time.perf_counter()
         try:
-            response = await run_triage(TriageRequest(message=row["message"]), tenant_id)
+            response, _model = await run_triage(TriageRequest(message=row["message"]), tenant_id)
             intent = response.intent.value
             unavailable = response.escalation_reason == LLM_UNAVAILABLE
             escalated, reason = response.escalate, response.escalation_reason
