@@ -1,0 +1,99 @@
+name: Eval
+
+# Nightly rather than per-push: a full run is ~100 model calls and Google's
+# free tier allows 15 requests/minute/model, so running it on every push
+# would be flaky and would say more about quota than about quality.
+# Unit tests (including the dataset validator and the gate logic) still run
+# on every push in ci.yml.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Deliberately an ephemeral database, not Supabase: the eval creates its
+    # own tenant and loads the sample corpus, so it needs no real data. That
+    # keeps production credentials out of CI entirely - GOOGLE_API_KEY is the
+    # only secret this workflow can see.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+      APP_DATABASE_URL: postgresql+asyncpg://triage_app:ci-only-password@localhost:5432/postgres
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      LLM_PROVIDER: gemini
+      ENVIRONMENT: ci
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Apply migrations (admin role)
+        run: python scripts/migrate.py
+      - name: Set triage_app password
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres \
+            -c "alter role triage_app with password 'ci-only-password';"
+
+      - name: Run evaluation
+        id: eval
+        # Low concurrency to stay nearer the free-tier rate limit. The runner
+        # retries rate-limited rows once and reports how many still failed.
+        run: |
+          set +e
+          python -m evals.run --concurrency 2 --output evals/reports/ci.json | tee eval-output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish results to the run summary
+        if: always()
+        run: |
+          {
+            echo '## Evaluation result'
+            echo '```'
+            cat eval-output.txt || echo "(no output - the run did not get that far)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: |
+            evals/reports/ci.json
+            eval-output.txt
+          if-no-files-found: warn
+
+      - name: Decide pass/fail
+        # 0 pass, 1 regression, 2 inconclusive, 3 invalid dataset.
+        # Inconclusive means too many rows hit an unavailable LLM, so the run
+        # says nothing about quality either way. Failing the job on a provider
+        # outage would train everyone to ignore a red Eval badge, which is
+        # exactly the signal that has to stay trustworthy.
+        run: |
+          case "${{ steps.eval.outputs.exit_code }}" in
+            0) echo "Eval passed." ;;
+            2) echo "::warning::Eval inconclusive - too many rows hit an unavailable LLM. Quality was not measured." ;;
+            3) echo "::error::Dataset is invalid."; exit 1 ;;
+            *) echo "::error::Eval detected a regression (see the run summary)."; exit 1 ;;
+          esac
