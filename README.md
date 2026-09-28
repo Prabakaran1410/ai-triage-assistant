@@ -26,6 +26,23 @@ python scripts/seed_demo_knowledge.py     # creates a demo tenant + knowledge
 python scripts/issue_test_token.py <tenant_id>
 ```
 
+## Running the tests
+
+```bash
+docker build -t triage-dev -f dev.Dockerfile .          # once, and when deps change
+docker run --rm --env-file .env -v "$PWD:/app" -w /app triage-dev   sh -c "ruff check . && pytest -q"
+```
+
+Tests that need a database skip themselves when `APP_DATABASE_URL` is unset,
+so the suite runs without one - it just covers less. CI runs everything
+against an ephemeral Postgres.
+
+The console has its own suite:
+
+```bash
+cd console && npm install && npm test && npm run build
+```
+
 ## Layout
 
 ```
