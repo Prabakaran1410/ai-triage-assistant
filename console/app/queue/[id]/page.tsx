@@ -54,6 +54,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
                 draftReply={event.draft_reply}
                 finalReply={event.final_reply}
                 canReview={canReview}
+                customerEmail={event.customer_email}
               />
             </Card>
 
@@ -105,6 +106,10 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
                   value={event.confidence === null ? "n/a" : event.confidence.toFixed(2)}
                 />
                 <Detail label="Channel" value={event.channel} />
+                <Detail
+                  label="Reply to"
+                  value={event.customer_email ?? "no address"}
+                />
                 <Detail label="Model" value={event.model ?? "none"} />
                 <Detail
                   label="Latency"

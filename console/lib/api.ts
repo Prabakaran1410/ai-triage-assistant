@@ -78,6 +78,7 @@ export type AuditEntry = {
 };
 
 export type EventDetail = QueueItem & {
+  customer_email: string | null;
   draft_reply: string | null;
   final_reply: string | null;
   citations: Citation[];

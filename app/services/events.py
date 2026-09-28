@@ -20,6 +20,11 @@ from sqlalchemy import text
 
 from app.core.db import tenant_scoped_connection
 from app.models.triage import TriageResponse
+from app.services.delivery import (
+    DeliveryError,
+    build_subject,
+    get_delivery_provider,
+)
 
 # Initial states. Anything a human must look at is needs_review; draft_ready
 # means the system is willing to answer, not that it may send without review
@@ -47,6 +52,7 @@ async def record_triage_decision(
     message: str,
     channel: str,
     response: TriageResponse,
+    customer_email: str | None = None,
     requested_by: str | None,
     latency_ms: int,
     model: str | None,
@@ -62,11 +68,11 @@ async def record_triage_decision(
                 insert into triage_events (
                     id, tenant_id, message, channel, intent, confidence,
                     escalate, escalation_reason, draft_reply, citations,
-                    status, requested_by, latency_ms, model
+                    status, requested_by, latency_ms, model, customer_email
                 ) values (
                     :id, :tenant_id, :message, :channel, :intent, :confidence,
                     :escalate, :escalation_reason, :draft_reply, (:citations)::jsonb,
-                    :status, :requested_by, :latency_ms, :model
+                    :status, :requested_by, :latency_ms, :model, :customer_email
                 )
                 """
             ),
@@ -85,6 +91,7 @@ async def record_triage_decision(
                 "requested_by": requested_by,
                 "latency_ms": latency_ms,
                 "model": model,
+                "customer_email": customer_email,
             },
         )
         await conn.execute(
@@ -249,6 +256,7 @@ async def get_event(tenant_id: str, event_id: str) -> dict | None:
         "channel": row.channel,
         "model": row.model,
         "latency_ms": row.latency_ms,
+        "customer_email": row.customer_email,
         "created_at": row.created_at.isoformat(),
         "audit": [
             {
@@ -298,6 +306,43 @@ async def apply_review(
         if row.status not in ALLOWED_TRANSITIONS[action]:
             raise ReviewError(f"cannot {action} a reply that is already '{row.status}'")
 
+        delivery = None
+        if action == "send":
+            # Delivered before the status moves, so `sent` never describes a
+            # message nobody received. The row lock is held across the
+            # provider call: that is a short external request, and holding it
+            # is what stops two reviewers both sending the same reply.
+            current = (
+                await conn.execute(
+                    text(
+                        "select customer_email, draft_reply, final_reply, message "
+                        "from triage_events where id = :id"
+                    ),
+                    {"id": event_id},
+                )
+            ).fetchone()
+            if not current.customer_email:
+                raise ReviewError(
+                    "This message arrived without a reply address, so it cannot be sent."
+                )
+            body = final_reply or current.final_reply or current.draft_reply
+            if not body:
+                raise ReviewError("There is no reply text to send.")
+
+            provider = get_delivery_provider()
+            try:
+                delivery = await provider.send(
+                    to=current.customer_email,
+                    subject=build_subject(current.message),
+                    body=body,
+                )
+            except DeliveryError as e:
+                raise ReviewError(str(e)) from e
+            if not delivery.delivered:
+                raise ReviewError(
+                    delivery.detail or "The reply could not be delivered."
+                )
+
         await conn.execute(
             text(
                 """
@@ -339,7 +384,16 @@ async def apply_review(
                 # so the trail shows what was actually changed and by whom,
                 # even if the reply is edited again later.
                 "detail": json.dumps(
-                    {k: v for k, v in {"note": note, "final_reply": final_reply}.items() if v}
+                    {
+                        k: v
+                        for k, v in {
+                            "note": note,
+                            "final_reply": final_reply,
+                            "delivery_provider": delivery.provider if delivery else None,
+                            "delivery_reference": delivery.reference if delivery else None,
+                        }.items()
+                        if v
+                    }
                 ),
             },
         )
