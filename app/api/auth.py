@@ -26,7 +26,7 @@ async def login(
     handles real customer logins.
     """
     settings = get_settings()
-    redirect_uri = f"{settings.app_base_url}/auth/callback"
+    redirect_uri = settings.sso_redirect_uri or f"{settings.app_base_url}/auth/callback"
     state = secrets.token_urlsafe(16)
     url = get_authorization_url(organization_id, redirect_uri, state)
     return RedirectResponse(url)
