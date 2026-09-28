@@ -48,6 +48,7 @@ class EventDetail(BaseModel):
     citations: list[Citation]
     status: str
     channel: str
+    customer_email: str | None = None
     model: str | None
     latency_ms: int | None
     created_at: str

@@ -33,6 +33,10 @@ class TriageRequest(BaseModel):
     # knowledge base just by asking.
     message: str = Field(min_length=1)
     channel: str = "api"
+    # Where an approved reply would be sent. Optional: a message can arrive
+    # without one (a web form, an internal test), which simply means the
+    # reply cannot be delivered.
+    customer_email: str | None = None
 
 
 class TriageResponse(BaseModel):

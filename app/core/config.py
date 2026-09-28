@@ -42,6 +42,14 @@ class Settings(BaseSettings):
     # limit. Counted in Redis; with no Redis, nothing is limited.
     triage_rate_limit_per_minute: int = 20
 
+    # How an approved reply reaches the customer. "record-only" (the
+    # default) writes what would have been sent and reports that it was not
+    # delivered, rather than marking a message answered that nobody
+    # received. Set to "resend" with an API key to actually send email.
+    delivery_provider: str = "record-only"
+    resend_api_key: str | None = None
+    delivery_from_address: str = "onboarding@resend.dev"
+
     llm_provider: str = "anthropic"
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None

@@ -25,6 +25,37 @@ pytestmark = pytest.mark.skipif(
     reason="requires a live database; set APP_DATABASE_URL to run",
 )
 
+class StubProvider:
+    name = "stub"
+
+    def __init__(self, fail: bool = False):
+        self.sent: list[tuple[str, str]] = []
+        self.fail = fail
+
+    async def send(self, *, to, subject, body):
+        from app.services.delivery import DeliveryError, DeliveryResult
+
+        if self.fail:
+            raise DeliveryError("the provider is down")
+        self.sent.append((to, body))
+        return DeliveryResult(delivered=True, provider=self.name, reference="prov-123")
+
+
+@pytest.fixture
+def delivering(monkeypatch):
+    """A channel that works, so the send path can be exercised."""
+    provider = StubProvider()
+    monkeypatch.setattr("app.services.events.get_delivery_provider", lambda: provider)
+    return provider
+
+
+@pytest.fixture
+def failing_delivery(monkeypatch):
+    provider = StubProvider(fail=True)
+    monkeypatch.setattr("app.services.events.get_delivery_provider", lambda: provider)
+    return provider
+
+
 CITATION = Citation(
     source_id="returns-policy", title="Returns",
     updated_at="2026-09-01T00:00:00+00:00", excerpt="Returns within 60 days.",
@@ -53,7 +84,9 @@ async def tenant():
         await conn.execute(text("delete from tenants where id = :id"), {"id": tid})
 
 
-async def _queued(tenant_id: str, *, escalate: bool = True) -> str:
+async def _queued(
+    tenant_id: str, *, escalate: bool = True, customer_email: str | None = "buyer@example.com"
+) -> str:
     recorded = await record_triage_decision(
         tenant_id=tenant_id, message="Where is my order?", channel="api",
         response=TriageResponse(
@@ -63,6 +96,7 @@ async def _queued(tenant_id: str, *, escalate: bool = True) -> str:
             escalation_reason="intent 'complaint' always escalates" if escalate else None,
         ),
         requested_by=None, latency_ms=100, model="m",
+        customer_email=customer_email,
     )
     return recorded.event_id
 
@@ -147,7 +181,7 @@ async def test_a_reply_cannot_be_acted_on_twice(tenant):
         )
 
 
-async def test_sending_requires_approval_first(tenant):
+async def test_sending_requires_approval_first(tenant, delivering):
     tenant_id, reviewer = tenant
     event_id = await _queued(tenant_id)
     with pytest.raises(ReviewError, match="cannot send"):
@@ -160,6 +194,84 @@ async def test_sending_requires_approval_first(tenant):
     assert await apply_review(
         tenant_id=tenant_id, event_id=event_id, action="send", actor_user_id=reviewer
     ) == STATUS_SENT
+
+
+# --- delivery: `sent` must mean it actually left ----------------------------
+
+async def test_a_reply_is_not_marked_sent_when_nothing_was_delivered(tenant):
+    """The default provider sends nothing. Recording that as `sent` would put
+    a lie in the audit trail - the bug this whole path exists to fix."""
+    tenant_id, reviewer = tenant
+    event_id = await _queued(tenant_id)
+    await apply_review(
+        tenant_id=tenant_id, event_id=event_id, action="approve", actor_user_id=reviewer
+    )
+    with pytest.raises(ReviewError, match="No delivery channel"):
+        await apply_review(
+            tenant_id=tenant_id, event_id=event_id, action="send", actor_user_id=reviewer
+        )
+    event = await get_event(tenant_id, event_id)
+    assert event["status"] == STATUS_APPROVED, "a failed send must not advance the status"
+
+
+async def test_a_message_with_no_reply_address_cannot_be_sent(tenant, delivering):
+    tenant_id, reviewer = tenant
+    event_id = await _queued(tenant_id, customer_email=None)
+    await apply_review(
+        tenant_id=tenant_id, event_id=event_id, action="approve", actor_user_id=reviewer
+    )
+    with pytest.raises(ReviewError, match="without a reply address"):
+        await apply_review(
+            tenant_id=tenant_id, event_id=event_id, action="send", actor_user_id=reviewer
+        )
+
+
+async def test_a_provider_failure_leaves_the_reply_unsent(tenant, failing_delivery):
+    tenant_id, reviewer = tenant
+    event_id = await _queued(tenant_id)
+    await apply_review(
+        tenant_id=tenant_id, event_id=event_id, action="approve", actor_user_id=reviewer
+    )
+    with pytest.raises(ReviewError, match="provider is down"):
+        await apply_review(
+            tenant_id=tenant_id, event_id=event_id, action="send", actor_user_id=reviewer
+        )
+    event = await get_event(tenant_id, event_id)
+    assert event["status"] == STATUS_APPROVED
+
+
+async def test_a_successful_send_records_what_was_sent_and_where(tenant, delivering):
+    tenant_id, reviewer = tenant
+    event_id = await _queued(tenant_id)
+    await apply_review(
+        tenant_id=tenant_id, event_id=event_id, action="approve", actor_user_id=reviewer
+    )
+    await apply_review(
+        tenant_id=tenant_id, event_id=event_id, action="send", actor_user_id=reviewer
+    )
+
+    assert delivering.sent == [
+        ("buyer@example.com", "A tracking email is sent within 24 hours.")
+    ]
+    event = await get_event(tenant_id, event_id)
+    assert event["status"] == STATUS_SENT
+    # The provider's own id, so someone can match it against their logs when
+    # a customer says they never received it.
+    assert event["audit"][-1]["detail"]["delivery_reference"] == "prov-123"
+
+
+async def test_an_edited_reply_is_what_gets_sent(tenant, delivering):
+    """Not the model's original draft - the reviewer changed it for a reason."""
+    tenant_id, reviewer = tenant
+    event_id = await _queued(tenant_id)
+    await apply_review(
+        tenant_id=tenant_id, event_id=event_id, action="edit",
+        actor_user_id=reviewer, final_reply="What a human actually wrote.",
+    )
+    await apply_review(
+        tenant_id=tenant_id, event_id=event_id, action="send", actor_user_id=reviewer
+    )
+    assert delivering.sent[-1][1] == "What a human actually wrote."
 
 
 async def test_unknown_event_is_refused(tenant):

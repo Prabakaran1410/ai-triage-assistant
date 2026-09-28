@@ -206,6 +206,7 @@ async def triage(
             message=request.message,
             channel=request.channel,
             response=response,
+            customer_email=request.customer_email,
             requested_by=current_user.user_id,
             latency_ms=latency_ms,
             model=model,

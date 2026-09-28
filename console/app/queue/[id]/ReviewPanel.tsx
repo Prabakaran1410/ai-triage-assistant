@@ -15,12 +15,14 @@ export function ReviewPanel({
   draftReply,
   finalReply,
   canReview,
+  customerEmail,
 }: {
   eventId: string;
   status: string;
   draftReply: string | null;
   finalReply: string | null;
   canReview: boolean;
+  customerEmail: string | null;
 }) {
   const action = reviewAction.bind(null, eventId);
   const [state, formAction, pending] = useActionState(action, null);
@@ -101,7 +103,7 @@ export function ReviewPanel({
           </>
         ) : null}
 
-        {isApproved ? (
+        {isApproved && customerEmail ? (
           <button
             type="submit"
             name="action"
@@ -109,8 +111,17 @@ export function ReviewPanel({
             disabled={pending}
             className={`${buttonStyles.base} ${buttonStyles.affirm}`}
           >
-            Send to customer
+            Send to {customerEmail}
           </button>
+        ) : null}
+        {isApproved && !customerEmail ? (
+          // Offering a button that cannot work is worse than not offering
+          // one: the reviewer presses it, sees an error, and learns nothing
+          // about why.
+          <p className="self-center text-sm text-muted">
+            This message arrived without a reply address, so it cannot be sent
+            from here.
+          </p>
         ) : null}
 
         <button
