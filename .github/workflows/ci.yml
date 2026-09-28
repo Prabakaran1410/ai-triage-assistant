@@ -45,3 +45,29 @@ jobs:
             -c "alter role triage_app with password 'ci-only-password';"
       - name: Test (including live tenant isolation against ephemeral Postgres)
         run: pytest -q
+
+  console:
+    # The console had no CI: a broken build was only discovered by Vercel
+    # after a push, and its CSRF check had nothing verifying it.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Test
+        run: npm test
+      - name: Build
+        # A value is required for the build to resolve; it is never called.
+        env:
+          API_BASE_URL: https://example.invalid
+        run: npm run build

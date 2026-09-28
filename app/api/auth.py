@@ -17,18 +17,30 @@ async def login(
     organization_id: str = Query(
         ..., description="The WorkOS Organization ID for the tenant logging in"
     ),
+    state: str | None = Query(
+        None,
+        description="Opaque CSRF value from the caller; echoed back by the IdP.",
+    ),
 ):
-    """Redirects to the customer's own IdP login page via WorkOS.
+    """Redirect to the customer's own IdP login page via WorkOS.
 
-    Phase 0 note: `state` isn't yet persisted and checked on callback (no
-    CSRF protection on the redirect round-trip). Fine for the current
-    single-environment testing setup; tracked as a follow-up before this
-    handles real customer logins.
+    On `state`: CSRF protection for an OAuth round-trip works by binding the
+    state to the *browser* that began the flow, normally through a cookie.
+    This API never sees that browser - WorkOS returns to the console, which
+    then exchanges the code here server to server. So the console generates
+    the state, stores it in its own first-party cookie and verifies it on
+    the way back; this endpoint only forwards it to WorkOS.
+
+    A caller that does not supply one (the direct-to-API flow used before
+    the console existed, and in testing) still gets a random value, so the
+    parameter is always present in the authorization request - but nothing
+    verifies it in that case, because nothing can.
     """
     settings = get_settings()
     redirect_uri = settings.sso_redirect_uri or f"{settings.app_base_url}/auth/callback"
-    state = secrets.token_urlsafe(16)
-    url = get_authorization_url(organization_id, redirect_uri, state)
+    url = get_authorization_url(
+        organization_id, redirect_uri, state or secrets.token_urlsafe(16)
+    )
     return RedirectResponse(url)
 
 

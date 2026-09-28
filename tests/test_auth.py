@@ -126,3 +126,32 @@ def test_token_from_a_slightly_fast_clock_is_accepted():
 def test_token_from_a_badly_wrong_clock_is_still_rejected():
     with pytest.raises(ValueError):
         verify_jwt(_token_issued_at(+300))
+
+
+def test_login_forwards_the_callers_state_to_the_idp(monkeypatch):
+    """The console's state must survive the round-trip, or it has nothing to
+    compare against when the browser comes back."""
+    captured = {}
+
+    def fake_authorization_url(organization_id, redirect_uri, state):
+        captured.update(organization=organization_id, redirect_uri=redirect_uri, state=state)
+        return "https://api.workos.com/sso/authorize?stub=1"
+
+    monkeypatch.setattr("app.api.auth.get_authorization_url", fake_authorization_url)
+    response = client.get(
+        "/auth/login",
+        params={"organization_id": "org_test", "state": "console-supplied-state"},
+        follow_redirects=False,
+    )
+    assert response.status_code in (302, 307)
+    assert captured["state"] == "console-supplied-state"
+
+
+def test_login_still_sends_a_state_when_the_caller_omits_one(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "app.api.auth.get_authorization_url",
+        lambda o, r, s: captured.setdefault("state", s) or "https://example.com",
+    )
+    client.get("/auth/login", params={"organization_id": "org_test"}, follow_redirects=False)
+    assert captured["state"], "an authorization request should never go out without a state"
