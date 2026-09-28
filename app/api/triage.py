@@ -2,7 +2,7 @@ import datetime as dt
 import logging
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.core.config import get_settings
 from app.core.security import CurrentUser, get_current_user
@@ -11,6 +11,7 @@ from app.models.triage import Citation, Intent, TriageRequest, TriageResponse
 from app.services.escalation import STALE_DAYS_THRESHOLD, should_escalate
 from app.services.events import record_triage_decision
 from app.services.llm import LLMTriageOutput, get_llm_provider
+from app.services.rate_limit import check_rate_limit
 from app.services.redaction import Redaction, redact, restore, unrestored_placeholders
 from app.services.retrieval import RetrievedChunk, retrieve_chunks
 
@@ -155,9 +156,32 @@ async def run_triage(request: TriageRequest, tenant_id: str) -> tuple[TriageResp
 
 @router.post("/triage", response_model=TriageResponse)
 async def triage(
-    request: TriageRequest, current_user: CurrentUser = Depends(get_current_user)
+    request: TriageRequest,
+    response: Response,
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> TriageResponse:
     tenant_id = current_user.tenant_id
+
+    # Limit per tenant, not per user: the quota being protected is shared,
+    # so one tenant's runaway integration must not starve another's.
+    decision = await check_rate_limit(
+        f"triage:{tenant_id}", limit=get_settings().triage_rate_limit_per_minute
+    )
+    response.headers["X-RateLimit-Limit"] = str(decision.limit)
+    response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
+    if not decision.allowed:
+        # 429 with Retry-After, so a well-behaved client backs off rather
+        # than retrying immediately and making it worse.
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"Rate limit of {decision.limit} requests per minute reached for this tenant.",
+            headers={
+                "Retry-After": str(decision.retry_after),
+                "X-RateLimit-Limit": str(decision.limit),
+                "X-RateLimit-Remaining": "0",
+            },
+        )
+
     with observe(
         "triage",
         as_type="span",
