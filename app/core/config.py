@@ -36,6 +36,12 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
+    # Requests per minute per tenant on /triage. Every call spends provider
+    # quota, and Google's free tier allows 15 per minute per model, so one
+    # caller in a retry loop can exhaust it for everyone. 0 disables the
+    # limit. Counted in Redis; with no Redis, nothing is limited.
+    triage_rate_limit_per_minute: int = 20
+
     llm_provider: str = "anthropic"
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None

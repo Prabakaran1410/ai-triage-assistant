@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from app.api import auth, events, health, knowledge, triage
 from app.core.db import dispose_engine
 from app.core.tracing import flush_tracer
+from app.services.rate_limit import close_redis
 
 
 @asynccontextmanager
@@ -16,6 +17,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     # database connections are dropped rather than returned.
     flush_tracer()
     await dispose_engine()
+    await close_redis()
 
 
 app = FastAPI(title="AI Triage Assistant", version="0.1.0", lifespan=lifespan)
