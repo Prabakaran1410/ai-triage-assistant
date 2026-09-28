@@ -29,13 +29,13 @@ def test_exceptions_in_traced_code_still_propagate():
 
 
 def test_customer_content_is_not_captured_by_default():
-    assert tracing.redact("what is my balance?") == "[content not captured]"
+    assert tracing.traced_content("what is my balance?") == "[content not captured]"
 
 
 def test_customer_content_captured_only_when_explicitly_enabled(monkeypatch):
     monkeypatch.setenv("LANGFUSE_CAPTURE_CONTENT", "true")
     get_settings.cache_clear()
-    assert tracing.redact("what is my balance?") == "what is my balance?"
+    assert tracing.traced_content("what is my balance?") == "what is my balance?"
 
 
 def test_flush_without_a_client_does_nothing():

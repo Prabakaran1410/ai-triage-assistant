@@ -12,7 +12,7 @@ from typing import ClassVar, Protocol, TypeVar
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
-from app.core.tracing import observe, redact
+from app.core.tracing import observe, traced_content
 from app.models.triage import Intent
 
 T = TypeVar("T", bound=BaseModel)
@@ -144,7 +144,7 @@ class GeminiProvider:
                 name,
                 as_type="generation",
                 model=model,
-                input=redact(prompt),
+                input=traced_content(prompt),
                 metadata={"attempt": attempt, **(metadata or {})},
             ) as generation:
                 try:
@@ -169,7 +169,7 @@ class GeminiProvider:
 
                 usage = getattr(response, "usage_metadata", None)
                 generation.update(
-                    output=redact(response.text),
+                    output=traced_content(response.text),
                     usage_details={
                         "input": getattr(usage, "prompt_token_count", None) or 0,
                         "output": getattr(usage, "candidates_token_count", None) or 0,

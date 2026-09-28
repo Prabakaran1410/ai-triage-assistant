@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     # Must also be registered as a redirect URI in the WorkOS dashboard.
     sso_redirect_uri: str | None = None
 
+    # Replace customer identifiers with placeholders before text leaves our
+    # infrastructure for Google or Langfuse. On by default; turning it off is
+    # a deliberate choice, not an oversight. See app/services/redaction.py.
+    pii_redaction_enabled: bool = True
+
     langfuse_host: str | None = None
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
