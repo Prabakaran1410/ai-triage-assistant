@@ -2,6 +2,8 @@
 
 import { useActionState } from "react";
 
+import { Alert, buttonStyles, Field, inputStyles } from "@/components/ui";
+
 import { reviewAction } from "./actions";
 
 const OPEN_STATUSES = ["needs_review", "draft_ready"];
@@ -25,9 +27,12 @@ export function ReviewPanel({
 
   if (!canReview) {
     return (
-      <p className="rounded-md border border-[--color-line] bg-[--color-canvas] px-4 py-3 text-sm text-[--color-muted]">
-        Your role can view this queue but not act on it.
-      </p>
+      <div className="rounded-lg border border-line bg-canvas px-4 py-3">
+        <p className="text-sm font-medium text-ink">View only</p>
+        <p className="mt-0.5 text-sm text-muted">
+          Your role can read this queue but not act on it.
+        </p>
+      </div>
     );
   }
 
@@ -36,53 +41,43 @@ export function ReviewPanel({
 
   if (!isOpen && !isApproved) {
     return (
-      <p className="rounded-md border border-[--color-line] bg-[--color-canvas] px-4 py-3 text-sm text-[--color-muted]">
-        This reply is {status.replace(/_/g, " ")}. No further action is possible.
-      </p>
+      <div className="rounded-lg border border-line bg-canvas px-4 py-3">
+        <p className="text-sm text-muted">
+          This reply is <span className="font-medium text-ink">{status.replace(/_/g, " ")}</span>.
+          No further action is possible.
+        </p>
+      </div>
     );
   }
 
   return (
     <form action={formAction} className="space-y-4">
-      <div>
-        <label htmlFor="final_reply" className="block text-sm font-medium">
-          Reply to send
-        </label>
+      <Field
+        label="Reply to send"
+        htmlFor="final_reply"
+        hint="Editing keeps the model's original draft on the record, so the two can be compared later."
+      >
         <textarea
           id="final_reply"
           name="final_reply"
-          rows={7}
+          rows={8}
           defaultValue={finalReply ?? draftReply ?? ""}
-          className="mt-1 w-full rounded-md border border-[--color-line] bg-white px-3 py-2 text-sm outline-none focus:border-[--color-accent]"
+          className={`${inputStyles} resize-y leading-relaxed`}
         />
-        <p className="mt-1.5 text-xs text-[--color-muted]">
-          Editing keeps the model&rsquo;s original draft on the record, so the two can
-          be compared later.
-        </p>
-      </div>
+      </Field>
 
-      <div>
-        <label htmlFor="note" className="block text-sm font-medium">
-          Note <span className="font-normal text-[--color-muted]">(optional)</span>
-        </label>
+      <Field label="Note (optional)" htmlFor="note">
         <input
           id="note"
           name="note"
-          className="mt-1 w-full rounded-md border border-[--color-line] bg-white px-3 py-2 text-sm outline-none focus:border-[--color-accent]"
           placeholder="Why you changed or rejected it"
+          className={inputStyles}
         />
-      </div>
+      </Field>
 
-      {state?.error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-[--color-warn] bg-[--color-warn-bg] px-3 py-2 text-sm text-[--color-warn]"
-        >
-          {state.error} &mdash; reload to see the current state.
-        </p>
-      ) : null}
+      {state?.error ? <Alert>{state.error} &mdash; reload to see the current state.</Alert> : null}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 border-t border-line pt-4">
         {isOpen ? (
           <>
             <button
@@ -90,7 +85,7 @@ export function ReviewPanel({
               name="action"
               value="approve"
               disabled={pending}
-              className="rounded-md bg-[--color-ok] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className={`${buttonStyles.base} ${buttonStyles.affirm}`}
             >
               Approve as drafted
             </button>
@@ -99,29 +94,31 @@ export function ReviewPanel({
               name="action"
               value="edit"
               disabled={pending}
-              className="rounded-md bg-[--color-accent] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className={`${buttonStyles.base} ${buttonStyles.primary}`}
             >
               Save edit
             </button>
           </>
         ) : null}
+
         {isApproved ? (
           <button
             type="submit"
             name="action"
             value="send"
             disabled={pending}
-            className="rounded-md bg-[--color-ok] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className={`${buttonStyles.base} ${buttonStyles.affirm}`}
           >
             Send to customer
           </button>
         ) : null}
+
         <button
           type="submit"
           name="action"
           value="reject"
           disabled={pending}
-          className="rounded-md border border-[--color-line] px-4 py-2 text-sm font-medium hover:border-[--color-muted] disabled:opacity-50"
+          className={`${buttonStyles.base} ${buttonStyles.secondary} ml-auto`}
         >
           Reject
         </button>
