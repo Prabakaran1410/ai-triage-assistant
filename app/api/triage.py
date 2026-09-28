@@ -4,12 +4,14 @@ import time
 
 from fastapi import APIRouter, Depends
 
+from app.core.config import get_settings
 from app.core.security import CurrentUser, get_current_user
-from app.core.tracing import observe, redact
+from app.core.tracing import observe, traced_content
 from app.models.triage import Citation, Intent, TriageRequest, TriageResponse
 from app.services.escalation import STALE_DAYS_THRESHOLD, should_escalate
 from app.services.events import record_triage_decision
 from app.services.llm import LLMTriageOutput, get_llm_provider
+from app.services.redaction import Redaction, redact, restore, unrestored_placeholders
 from app.services.retrieval import RetrievedChunk, retrieve_chunks
 
 logger = logging.getLogger(__name__)
@@ -18,6 +20,7 @@ router = APIRouter()
 
 TOP_K = 5
 LLM_UNAVAILABLE = "LLM provider unavailable"
+REDACTION_LEAK = "redacted value could not be restored in the draft"
 
 
 def _build_citations(
@@ -61,10 +64,21 @@ async def run_triage(request: TriageRequest, tenant_id: str) -> tuple[TriageResp
     it (None if no model answered). Deliberately does not persist: the
     evaluation runner calls this directly, and synthetic runs must not write
     into the tenant's real record. Persistence belongs to the endpoint."""
+    # Everything downstream of here - the embedding call, the model, the
+    # trace - sees placeholders instead of the customer's identifiers. The
+    # original text is kept for the escalation rules and for our own record.
+    settings = get_settings()
+    redaction = (
+        redact(request.message)
+        if settings.pii_redaction_enabled
+        else Redaction(text=request.message, mapping={})
+    )
+    safe_message = redaction.text
+
     with observe(
-        "retrieval", as_type="retriever", input=redact(request.message)
+        "retrieval", as_type="retriever", input=traced_content(safe_message)
     ) as retrieval:
-        chunks = await retrieve_chunks(tenant_id, request.message, k=TOP_K)
+        chunks = await retrieve_chunks(tenant_id, safe_message, k=TOP_K)
         # Which chunks came back and how close they were is the first thing
         # to look at when an answer is wrong; neither carries customer text.
         retrieval.update(
@@ -78,7 +92,7 @@ async def run_triage(request: TriageRequest, tenant_id: str) -> tuple[TriageResp
     try:
         result: LLMTriageOutput
         result, model = await provider.classify_and_draft(
-            message=request.message,
+            message=safe_message,
             snippets=[c.content for c in chunks],
         )
     except Exception:
@@ -104,20 +118,33 @@ async def run_triage(request: TriageRequest, tenant_id: str) -> tuple[TriageResp
     citations = _build_citations(chunks, result.used_snippet_indices)
     has_stale_source = _has_stale_source(chunks, result.used_snippet_indices)
 
+    # Put the customer's real details back before anybody reads the draft.
+    draft_reply = restore(result.draft_reply, redaction.mapping)
+    leftover = unrestored_placeholders(draft_reply)
+
     escalate, reason = should_escalate(
         intent=result.intent,
         confidence=result.confidence,
         citations=citations,
         has_stale_source=has_stale_source,
+        # The rules read the original: they look for the customer's own
+        # words, and should not be reasoning about placeholders.
         message=request.message,
     )
+
+    if leftover:
+        # A placeholder survived restoration. Sending "[EMAIL_1]" to a
+        # customer is worse than asking a person to look, so it goes to a
+        # person - and says so, rather than failing quietly.
+        logger.error("Unrestored placeholders %s for tenant=%s", leftover, tenant_id)
+        escalate, reason = True, REDACTION_LEAK
 
     return (
         TriageResponse(
             intent=result.intent,
             priority="high" if escalate else "normal",
             confidence=result.confidence,
-            draft_reply=result.draft_reply,
+            draft_reply=draft_reply,
             citations=citations,
             escalate=escalate,
             escalation_reason=reason,
@@ -134,7 +161,7 @@ async def triage(
     with observe(
         "triage",
         as_type="span",
-        input=redact(request.message),
+        input=traced_content(redact(request.message).text),
         metadata={
             "tenant_id": tenant_id,
             "user_id": current_user.user_id,

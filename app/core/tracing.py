@@ -76,8 +76,13 @@ def disable_tracer() -> None:
     _initialised = True
 
 
-def redact(value: Any) -> Any:
-    """Pass customer-derived content through only if capture is enabled."""
+def traced_content(value: Any) -> Any:
+    """Whether content reaches the trace at all.
+
+    Distinct from app/services/redaction.py, which removes identifiers
+    from text that is being sent onward. Callers should pass already
+    redacted text here, so that enabling capture exposes a message with
+    its identifiers already replaced rather than the raw one."""
     return value if get_settings().langfuse_capture_content else _NOT_CAPTURED
 
 
