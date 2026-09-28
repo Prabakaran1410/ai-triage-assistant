@@ -64,3 +64,16 @@ def require_reviewer(
             f"role '{current_user.role}' cannot review replies",
         )
     return current_user
+
+
+def require_admin(
+    current_user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    """Managing the knowledge base is an admin action, not a reviewer one:
+    it changes what every future reply is grounded in, for everyone."""
+    if current_user.role != ROLE_ADMIN:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"role '{current_user.role}' cannot manage the knowledge base",
+        )
+    return current_user

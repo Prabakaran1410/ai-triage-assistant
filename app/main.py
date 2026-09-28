@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import auth, events, health, triage
+from app.api import auth, events, health, knowledge, triage
 from app.core.db import dispose_engine
 from app.core.tracing import flush_tracer
 
@@ -24,3 +24,4 @@ app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(triage.router)
 app.include_router(events.router)
+app.include_router(knowledge.router)
