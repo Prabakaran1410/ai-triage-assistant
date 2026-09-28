@@ -17,6 +17,23 @@ export function AppHeader({ email, role }: { email: string | null; role: string 
         </Link>
 
         {email ? (
+          <nav className="flex items-center gap-1">
+            {[
+              { href: "/queue", label: "Queue" },
+              { href: "/knowledge", label: "Knowledge" },
+            ].map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-soft transition-colors hover:bg-canvas hover:text-ink"
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        ) : null}
+
+        {email ? (
           <div className="flex items-center gap-4">
             <div className="text-right leading-tight">
               <p className="text-sm font-medium text-ink">{email}</p>
