@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # WorkOS). Render's URL locally would be your ngrok/dev tunnel; in
     # production it's the real API domain.
     app_base_url: str = "http://localhost:8000"
+    # Where WorkOS sends the browser after login. This is the CONSOLE, not
+    # this API: the console is a backend-for-frontend that exchanges the code
+    # server-side and keeps the JWT in its own first-party cookie, because a
+    # cookie set by this API would be third-party to the console's origin.
+    # Must also be registered as a redirect URI in the WorkOS dashboard.
+    sso_redirect_uri: str | None = None
 
     langfuse_host: str | None = None
     langfuse_public_key: str | None = None
