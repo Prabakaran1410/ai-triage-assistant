@@ -35,20 +35,23 @@ from app.services.events import record_triage_decision
 from app.services.ingest import KnowledgeChunk, replace_tenant_knowledge
 from evals.corpus import CORPUS
 
-# Ordered so the queue reads well top to bottom: the newest is shown first,
-# so the most striking item is sent last.
+# The queue lists newest first, so this list is seeded in reverse of how it
+# should read on screen: the last entry here appears at the top. Reading down
+# the queue then goes answered -> held, which is the order a demo narrates in,
+# and leaves the most striking item (the legal threat) at the bottom as the
+# closing beat. Reorder with that in mind, not alphabetically.
 DEMO_MESSAGES = [
-    # Answerable - the system does its job, with sources.
-    ("How long does standard shipping take, and what does it cost?", "chat", "dana@example.com"),
-    ("What does Trailhead Club membership cost, and what do I get for it?",
-     "chat", "sam@example.com"),
-    # Held back, each for a different reason.
-    ("This is the third order you've delivered late. I've had enough.", "email", "alex@example.com"),
-    ("Do you sell kayaks?", "chat", "jo@example.com"),
-    ("I want a refund for the tent I bought last week, it leaked on the first night.",
-     "email", "priya@example.com"),
+    # Held back, each for a different reason. These end up lowest on screen.
     ("The camp stove I bought burned my hand. I'm speaking to a lawyer.",
      "email", "chris@example.com"),
+    ("I want a refund for the tent I bought last week, it leaked on the first night.",
+     "email", "priya@example.com"),
+    ("Do you sell kayaks?", "chat", "jo@example.com"),
+    ("This is the third order you've delivered late. I've had enough.", "email", "alex@example.com"),
+    # Answerable - the system does its job, with sources. Top of the queue.
+    ("What does Trailhead Club membership cost, and what do I get for it?",
+     "chat", "sam@example.com"),
+    ("How long does standard shipping take, and what does it cost?", "chat", "dana@example.com"),
 ]
 
 
